@@ -1,0 +1,21 @@
+version: 8
+jobs:
+- name: SyncGithub
+  steps:
+  - !CheckoutStep
+    name: check out
+    cloneCredential: !DefaultCredential {}
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !CommandStep
+    name: Sync To Github
+    image: alpine/git:v2.30.2
+    commands:
+    - git push -f https://oauth2:@secret:githubAccessToken@@@github.com/LainNetWork/hana-web
+      HEAD:main
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  cpuRequirement: 250m
+  memoryRequirement: 128m
+  timeout: 3600
