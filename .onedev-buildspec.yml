@@ -11,7 +11,7 @@ jobs:
     image: alpine/git:v2.30.2
     commands:
     - git push -f https://oauth2:@secret:githubAccessToken@@@github.com/LainNetWork/psyche
-      HEAD:main
+      HEAD:master
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   retryCondition: never
   maxRetries: 3
