@@ -13,7 +13,10 @@ import (
 	"os"
 )
 
-var SuffixNotSupportError = errors.New("不支持的文件格式！")
+var (
+	SuffixNotSupportError = errors.New("不支持的文件格式！")
+	ContentNotInitError   = errors.New("环境尚未初始化，请传入配置对象指针！")
+)
 
 type PsycheConfig struct {
 	Url         string // git 仓库地址
@@ -77,8 +80,17 @@ func (psycheClient PsycheClient) GetCacheConfig() interface{} {
 	return psycheClient.configCache
 }
 
-// Refresh 刷新git仓库更新
-func (psycheClient PsycheClient) Refresh(config interface{}) error {
+// Init 传入配置对象指针，刷新git仓库更新
+func (psycheClient PsycheClient) Init(configPtr interface{}) error {
+	psycheClient.configCache = configPtr
+	return psycheClient.Refresh()
+}
+
+// Refresh 刷新配置
+func (psycheClient PsycheClient) Refresh() error {
+	if psycheClient.configCache == nil {
+		return ContentNotInitError
+	}
 	worktree, err := psycheClient.repo.Worktree()
 	if err != nil {
 		return err
@@ -104,12 +116,11 @@ func (psycheClient PsycheClient) Refresh(config interface{}) error {
 	switch psycheClient.clientConfig.Suffix {
 	case "yaml", "yml":
 		{
-			err := yaml.Unmarshal(all, config)
+			err := yaml.Unmarshal(all, psycheClient.configCache)
 			if err != nil {
 				return err
 			}
 		}
-		psycheClient.configCache = config
 	default:
 		return SuffixNotSupportError
 	}
