@@ -1,4 +1,4 @@
-package client
+package psyche
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ var (
 	ContentNotInitError   = errors.New("环境尚未初始化，请传入配置对象指针！")
 )
 
-type PsycheConfig struct {
+type Config struct {
 	Url         string // git 仓库地址
 	Username    string // git 用户名
 	PassWord    string // git 密码
@@ -28,18 +28,18 @@ type PsycheConfig struct {
 	Env         string // 环境名
 }
 
-var psycheClient *PsycheClient
+var psycheClient *Client
 
-type PsycheClient struct {
+type Client struct {
 	repo               *git.Repository
-	clientConfig       *PsycheConfig
+	clientConfig       *Config
 	configCache        interface{}
 	configContentCache string //读到文件的缓存
 }
 
-func NewPsycheClient(opts ...func(config *PsycheConfig)) *PsycheClient {
-	psycheClient = &PsycheClient{}
-	psycheClient.clientConfig = &PsycheConfig{
+func NewPsycheClient(opts ...func(config *Config)) *Client {
+	psycheClient = &Client{}
+	psycheClient.clientConfig = &Config{
 		Url:      os.Getenv("PSYCHE_GIT_URL"),
 		Username: os.Getenv("PSYCHE_GIT_USERNAME"),
 		PassWord: os.Getenv("PSYCHE_GIT_PASSWORD"),
@@ -76,18 +76,18 @@ func NewPsycheClient(opts ...func(config *PsycheConfig)) *PsycheClient {
 }
 
 // GetCacheConfig 直接获取缓存的配置
-func (psycheClient PsycheClient) GetCacheConfig() interface{} {
+func (psycheClient Client) GetCacheConfig() interface{} {
 	return psycheClient.configCache
 }
 
 // Init 传入配置对象指针，刷新git仓库更新
-func (psycheClient PsycheClient) Init(configPtr interface{}) error {
+func (psycheClient Client) Init(configPtr interface{}) error {
 	psycheClient.configCache = configPtr
 	return psycheClient.Refresh()
 }
 
 // Refresh 刷新配置
-func (psycheClient PsycheClient) Refresh() error {
+func (psycheClient Client) Refresh() error {
 	if psycheClient.configCache == nil {
 		return ContentNotInitError
 	}
@@ -127,7 +127,7 @@ func (psycheClient PsycheClient) Refresh() error {
 	return nil
 }
 
-func (psycheClient PsycheClient) GetConfigPath() string {
+func (psycheClient Client) GetConfigPath() string {
 	config := psycheClient.clientConfig
 	return fmt.Sprintf("%s/%s-%s.%s", config.ProjectName, config.ProjectName, config.Env, config.Suffix)
 }
