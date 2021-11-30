@@ -12,7 +12,6 @@ jobs:
     commands:
     - git remote add gitRemote https://github.com/LainNetWork/psyche.git
     - git push -f https://oauth2:@secret:githubAccessToken@@@github.com/LainNetWork/psyche
-      -u gitRemote master
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   retryCondition: never
   maxRetries: 3
