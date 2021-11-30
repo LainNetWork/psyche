@@ -11,8 +11,8 @@ jobs:
     image: alpine/git:v2.30.2
     commands:
     - git remote add gitRemote https://github.com/LainNetWork/psyche.git
-    - git branch -M master
-    - git push -u gitRemote master -f https://oauth2:@secret:githubAccessToken@@@github.com/LainNetWork/psyche
+    - git push -f https://oauth2:@secret:githubAccessToken@@@github.com/LainNetWork/psyche
+      -u gitRemote master
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   retryCondition: never
   maxRetries: 3
