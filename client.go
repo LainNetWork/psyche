@@ -10,10 +10,12 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"log"
 	"os"
 )
 
 var (
+	RepoInitError         = errors.New("git仓库初始化失败！")
 	SuffixNotSupportError = errors.New("不支持的文件格式！")
 	ContentNotInitError   = errors.New("环境尚未初始化，请传入配置对象指针！")
 )
@@ -33,11 +35,11 @@ var psycheClient *Client
 type Client struct {
 	repo               *git.Repository
 	clientConfig       *Config
-	configCache        interface{}
-	configContentCache string //读到文件的缓存
+	configCache        interface{} // 指向配置对象的指针
+	configContentCache string      //读到文件的缓存
 }
 
-func NewPsycheClient(opts ...func(config *Config)) *Client {
+func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	psycheClient = &Client{}
 	psycheClient.clientConfig = &Config{
 		Url:      os.Getenv("PSYCHE_GIT_URL"),
@@ -61,18 +63,20 @@ func NewPsycheClient(opts ...func(config *Config)) *Client {
 	}
 	clone, err := git.Clone(memory.NewStorage(), memfs.New(), options)
 	if err != nil {
-		panic("git仓库初始化失败！")
+		log.Println(err.Error())
+		return nil, RepoInitError
 	}
 	worktree, err := clone.Worktree()
 	if err != nil {
-		panic("git仓库初始化失败！")
+		log.Println(err.Error())
+		return nil, RepoInitError
 	}
 	err = worktree.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.ReferenceName(psycheClient.clientConfig.Branch),
 		Force:  true,
 	})
 	psycheClient.repo = clone
-	return psycheClient
+	return psycheClient, nil
 }
 
 // GetCacheConfig 直接获取缓存的配置
@@ -113,6 +117,7 @@ func (psycheClient Client) Refresh() error {
 	if err != nil {
 		return err
 	}
+	psycheClient.configContentCache = string(all)
 	switch psycheClient.clientConfig.Suffix {
 	case "yaml", "yml":
 		{
@@ -129,5 +134,5 @@ func (psycheClient Client) Refresh() error {
 
 func (psycheClient Client) GetConfigPath() string {
 	config := psycheClient.clientConfig
-	return fmt.Sprintf("%s/%s-%s.%s", config.ProjectName, config.ProjectName, config.Env, config.Suffix)
+	return fmt.Sprintf("%s/%s.%s", config.ProjectName, config.Env, config.Suffix)
 }
