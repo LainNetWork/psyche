@@ -10,7 +10,7 @@ jobs:
     name: Sync To Github
     image: alpine/git:v2.30.2
     commands:
-    - git push -f https://oauth2:@secret:githubAccessToken@@@github.com/LainNetWork/hana-web
+    - git push -f https://oauth2:@secret:githubAccessToken@@@github.com/LainNetWork/psyche
       HEAD:main
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   retryCondition: never
