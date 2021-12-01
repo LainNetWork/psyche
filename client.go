@@ -6,6 +6,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"gopkg.in/yaml.v2"
@@ -23,9 +24,8 @@ var (
 )
 
 type Config struct {
-	Url             string        // git 仓库地址
-	Username        string        // git 用户名
-	PassWord        string        // git 密码
+	Url             string // git 仓库地址
+	Auth            transport.AuthMethod
 	Branch          string        // 默认分支
 	ProjectName     string        // 项目名，即在git中文件夹名以及文件名
 	Suffix          string        // 配置文件后缀名，目前仅支持yml和yaml
@@ -45,11 +45,14 @@ type Client struct {
 
 func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	psycheClient = &Client{}
+	auth := &http.BasicAuth{
+		Username: os.Getenv("PSYCHE_GIT_USERNAME"),
+		Password: os.Getenv("PSYCHE_GIT_PASSWORD"),
+	}
 	psycheClient.clientConfig = &Config{
 		Url:             os.Getenv("PSYCHE_GIT_URL"),
-		Username:        os.Getenv("PSYCHE_GIT_USERNAME"),
-		PassWord:        os.Getenv("PSYCHE_GIT_PASSWORD"),
 		Suffix:          "yml",
+		Auth:            auth,
 		RefreshDuration: time.Duration(-1),
 	}
 	branch := os.Getenv("PSYCHE_GIT_DEFAULT_BRANCH")
@@ -59,14 +62,10 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	for _, opt := range opts {
 		opt(psycheClient.clientConfig)
 	}
-	options := &git.CloneOptions{
-		URL: psycheClient.clientConfig.Url,
-		Auth: &http.BasicAuth{
-			Username: psycheClient.clientConfig.Username,
-			Password: psycheClient.clientConfig.PassWord,
-		},
-	}
-	clone, err := git.Clone(memory.NewStorage(), memfs.New(), options)
+	clone, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
+		URL:  psycheClient.clientConfig.Url,
+		Auth: psycheClient.clientConfig.Auth,
+	})
 	if err != nil {
 		log.Println(err.Error())
 		return nil, RepoInitError
@@ -116,10 +115,7 @@ func (psycheClient *Client) refresh() error {
 		return err
 	}
 	err = worktree.Pull(&git.PullOptions{
-		Auth: &http.BasicAuth{
-			Username: psycheClient.clientConfig.Username,
-			Password: psycheClient.clientConfig.PassWord,
-		},
+		Auth:  psycheClient.clientConfig.Auth,
 		Force: true,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
