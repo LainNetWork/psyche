@@ -57,14 +57,17 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	}
 	branch := os.Getenv("PSYCHE_GIT_DEFAULT_BRANCH")
 	if branch == "" {
-		branch = "master"
+		psycheClient.clientConfig.Branch = "master"
+	} else {
+		psycheClient.clientConfig.Branch = branch
 	}
 	for _, opt := range opts {
 		opt(psycheClient.clientConfig)
 	}
 	clone, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
-		URL:  psycheClient.clientConfig.Url,
-		Auth: psycheClient.clientConfig.Auth,
+		ReferenceName: plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch),
+		URL:           psycheClient.clientConfig.Url,
+		Auth:          psycheClient.clientConfig.Auth,
 	})
 	if err != nil {
 		log.Println(err.Error())
@@ -76,9 +79,13 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 		return nil, RepoInitError
 	}
 	err = worktree.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.ReferenceName(psycheClient.clientConfig.Branch),
+		Branch: plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch),
 		Force:  true,
 	})
+	if err != nil {
+		log.Println(err.Error())
+		return nil, RepoInitError
+	}
 	psycheClient.repo = clone
 	return psycheClient, nil
 }
@@ -115,8 +122,9 @@ func (psycheClient *Client) refresh() error {
 		return err
 	}
 	err = worktree.Pull(&git.PullOptions{
-		Auth:  psycheClient.clientConfig.Auth,
-		Force: true,
+		ReferenceName: plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch),
+		Auth:          psycheClient.clientConfig.Auth,
+		Force:         true,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return err

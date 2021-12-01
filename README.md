@@ -24,8 +24,8 @@ type TestConfig struct {
         tags []int64 `yaml:"tags"`
     } `yaml:"notice"`
 }
-//必须为指针类型，否则无法自动更新到此引用上
-var config *TestConfig
+//必须是指针，否则无法自动更新到此引用上
+var config = &TestConfig{}
 
 func init() {
     psycheClient, err := psyche.NewPsycheClient(func(config *psyche.Config) {
