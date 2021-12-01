@@ -12,6 +12,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sync"
+	"time"
 )
 
 var (
@@ -21,13 +23,14 @@ var (
 )
 
 type Config struct {
-	Url         string // git 仓库地址
-	Username    string // git 用户名
-	PassWord    string // git 密码
-	Branch      string // 默认分支
-	ProjectName string // 项目名，即在git中文件夹名以及文件名
-	Suffix      string // 配置文件后缀名，目前仅支持yml和yaml
-	Env         string // 环境名
+	Url             string        // git 仓库地址
+	Username        string        // git 用户名
+	PassWord        string        // git 密码
+	Branch          string        // 默认分支
+	ProjectName     string        // 项目名，即在git中文件夹名以及文件名
+	Suffix          string        // 配置文件后缀名，目前仅支持yml和yaml
+	Env             string        // 环境名
+	RefreshDuration time.Duration // 自动刷新周期,默认为-1，不开启
 }
 
 var psycheClient *Client
@@ -37,15 +40,17 @@ type Client struct {
 	clientConfig       *Config
 	configCache        interface{} // 指向配置对象的指针
 	configContentCache string      //读到文件的缓存
+	mutex              sync.Mutex
 }
 
 func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	psycheClient = &Client{}
 	psycheClient.clientConfig = &Config{
-		Url:      os.Getenv("PSYCHE_GIT_URL"),
-		Username: os.Getenv("PSYCHE_GIT_USERNAME"),
-		PassWord: os.Getenv("PSYCHE_GIT_PASSWORD"),
-		Suffix:   "yml",
+		Url:             os.Getenv("PSYCHE_GIT_URL"),
+		Username:        os.Getenv("PSYCHE_GIT_USERNAME"),
+		PassWord:        os.Getenv("PSYCHE_GIT_PASSWORD"),
+		Suffix:          "yml",
+		RefreshDuration: time.Duration(-1),
 	}
 	branch := os.Getenv("PSYCHE_GIT_DEFAULT_BRANCH")
 	if branch == "" {
@@ -80,18 +85,29 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 }
 
 // GetCacheConfig 直接获取缓存的配置
-func (psycheClient Client) GetCacheConfig() interface{} {
+func (psycheClient *Client) GetCacheConfig() interface{} {
 	return psycheClient.configCache
 }
 
-// Init 传入配置对象指针，刷新git仓库更新
-func (psycheClient Client) Init(configPtr interface{}) error {
+// Init 传入配置对象指针，刷新git仓库更新，如配置了定时刷新，则启动定时器
+func (psycheClient *Client) Init(configPtr interface{}) error {
 	psycheClient.configCache = configPtr
-	return psycheClient.Refresh()
+	if psycheClient.clientConfig.RefreshDuration > 0 {
+		go func() {
+			ticker := time.NewTicker(psycheClient.clientConfig.RefreshDuration)
+			for range ticker.C {
+				err := psycheClient.refresh()
+				if err != nil {
+					log.Println("刷新配置异常！", err.Error())
+				}
+			}
+		}()
+	}
+	return psycheClient.refresh()
 }
 
-// Refresh 刷新配置
-func (psycheClient Client) Refresh() error {
+// refresh 刷新配置
+func (psycheClient *Client) refresh() error {
 	if psycheClient.configCache == nil {
 		return ContentNotInitError
 	}
@@ -121,7 +137,9 @@ func (psycheClient Client) Refresh() error {
 	switch psycheClient.clientConfig.Suffix {
 	case "yaml", "yml":
 		{
+			psycheClient.mutex.Lock()
 			err := yaml.Unmarshal(all, psycheClient.configCache)
+			psycheClient.mutex.Unlock()
 			if err != nil {
 				return err
 			}
@@ -132,7 +150,7 @@ func (psycheClient Client) Refresh() error {
 	return nil
 }
 
-func (psycheClient Client) GetConfigPath() string {
+func (psycheClient *Client) GetConfigPath() string {
 	config := psycheClient.clientConfig
 	return fmt.Sprintf("%s/%s.%s", config.ProjectName, config.Env, config.Suffix)
 }
