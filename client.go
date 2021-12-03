@@ -22,6 +22,7 @@ var (
 	RepoInitError         = errors.New("git仓库初始化失败！")
 	SuffixNotSupportError = errors.New("不支持的文件格式！")
 	ContentNotInitError   = errors.New("环境尚未初始化，请传入配置对象指针！")
+	NeedDoublePointInput  = errors.New("为了自动更新配置，请传入配置对象的二级指针！")
 )
 
 type Config struct {
@@ -37,11 +38,14 @@ type Config struct {
 var psycheClient *Client
 
 type Client struct {
-	repo               *git.Repository
-	clientConfig       *Config
-	configCache        interface{} // 指向配置对象指针的指针
-	configContentCache string      //读到文件的缓存
-	mutex              sync.Mutex
+	repo           *git.Repository
+	clientConfig   *Config
+	configPointPtr interface{}   // 指向配置对象指针的指针
+	configPoint    reflect.Value //指向配置对象指针的Value缓存
+	configType     reflect.Type
+	initialized    bool   // 上下文是否初始化，目前只允许监听一个配置对象，初始化后不得更改
+	configContent  []byte // 读到配置文件的缓存
+	mutex          sync.Mutex
 }
 
 func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
@@ -91,19 +95,49 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	return psycheClient, nil
 }
 
-// GetCacheConfig 直接获取缓存的配置
-func (psycheClient *Client) GetCacheConfig() interface{} {
-	return psycheClient.configCache
+// GetConfig 直接获取缓存的配置
+func (psycheClient *Client) GetConfig() string {
+	return string(psycheClient.configContent)
 }
 
-// Init 传入配置对象指针，刷新git仓库更新，如配置了定时刷新，则启动定时器
-func (psycheClient *Client) Init(configPtr interface{}) error {
-	psycheClient.configCache = configPtr
-	if psycheClient.clientConfig.RefreshDuration > 0 {
+func (psycheClient *Client) needAutoRefresh() bool {
+	return psycheClient.clientConfig.RefreshDuration > 0
+}
+
+func (psycheClient *Client) Watch(configPtrPtr interface{}) error {
+	of := reflect.TypeOf(configPtrPtr)
+	var p = of
+	var count = 0
+	for p.Kind() == reflect.Ptr {
+		count++
+		p = p.Elem()
+		if p.Kind() == reflect.Struct {
+			break
+		}
+	}
+	if count != 2 {
+		return NeedDoublePointInput
+	}
+	psycheClient.configPointPtr = configPtrPtr
+	value := reflect.ValueOf(configPtrPtr) // 配置对象的指针
+	psycheClient.configPoint = value.Elem()
+	psycheClient.configType = p
+	psycheClient.initialized = true
+	return nil
+}
+
+// Init 拉取配置，如配置了定时刷新，则启动定时器
+func (psycheClient *Client) Init() error {
+	if psycheClient.needAutoRefresh() {
 		go func() {
 			ticker := time.NewTicker(psycheClient.clientConfig.RefreshDuration)
 			for range ticker.C {
 				err := psycheClient.refresh()
+				if err != nil {
+					log.Println("刷新配置异常！", err.Error())
+					return
+				}
+				err = psycheClient.refreshConfig()
 				if err != nil {
 					log.Println("刷新配置异常！", err.Error())
 				}
@@ -115,9 +149,6 @@ func (psycheClient *Client) Init(configPtr interface{}) error {
 
 // refresh 刷新配置
 func (psycheClient *Client) refresh() error {
-	if psycheClient.configCache == nil {
-		return ContentNotInitError
-	}
 	worktree, err := psycheClient.repo.Worktree()
 	if err != nil {
 		return err
@@ -138,18 +169,28 @@ func (psycheClient *Client) refresh() error {
 	if err != nil {
 		return err
 	}
-	psycheClient.configContentCache = string(all)
+	head, err := psycheClient.repo.Head()
+	if err != nil {
+		return err
+	}
+	log.Println(head.Hash())
+	psycheClient.configContent = all
+	return nil
+}
+
+func (psycheClient *Client) refreshConfig() error {
+	if !psycheClient.initialized {
+		return ContentNotInitError
+	}
 	switch psycheClient.clientConfig.Suffix {
 	case "yaml", "yml":
 		{
-			psycheClient.mutex.Lock()
-			refValue := reflect.ValueOf(psycheClient.configCache)
-			i := refValue.Elem().Interface()
-			err := yaml.Unmarshal(all, i)
-			psycheClient.mutex.Unlock()
+			value := reflect.New(psycheClient.configType).Interface()
+			err := yaml.Unmarshal(psycheClient.configContent, value)
 			if err != nil {
 				return err
 			}
+			psycheClient.configPoint.Set(reflect.ValueOf(value).Convert(reflect.PtrTo(psycheClient.configType)))
 		}
 	default:
 		return SuffixNotSupportError
