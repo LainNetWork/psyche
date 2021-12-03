@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -38,7 +39,7 @@ var psycheClient *Client
 type Client struct {
 	repo               *git.Repository
 	clientConfig       *Config
-	configCache        interface{} // 指向配置对象的指针
+	configCache        interface{} // 指向配置对象指针的指针
 	configContentCache string      //读到文件的缓存
 	mutex              sync.Mutex
 }
@@ -142,7 +143,9 @@ func (psycheClient *Client) refresh() error {
 	case "yaml", "yml":
 		{
 			psycheClient.mutex.Lock()
-			err := yaml.Unmarshal(all, psycheClient.configCache)
+			refValue := reflect.ValueOf(psycheClient.configCache)
+			i := refValue.Elem().Interface()
+			err := yaml.Unmarshal(all, i)
 			psycheClient.mutex.Unlock()
 			if err != nil {
 				return err
