@@ -18,15 +18,14 @@ import (
 )
 
 type TestConfig struct {
-    userName string `yaml:"userName"`
-    password string `yaml:"password"`
+    UserName string `yaml:"username"`
+    Password string `yaml:"password"`
     Notice struct{
-        tags []int64 `yaml:"tags"`
+        Tags []int64 `yaml:"tags"`
     } `yaml:"notice"`
 }
 //必须是指针，否则无法自动更新到此引用上
-var config = &TestConfig{}
-
+var Config = &TestConfig{}
 func init() {
     psycheClient, err := psyche.NewPsycheClient(func(config *psyche.Config) {
         // 使用本配置，你需要在git仓库中，按如下路径存放配置文件：
@@ -34,19 +33,25 @@ func init() {
         config.Url = "https://gitxxxxxxx" //你的git仓库地址
         config.ProjectName = "projectName" //projectName会被识别为仓库中的文件夹名
         config.Env = "dev"  //环境会被识别为配置文件名
-        config.Auth = &http.BasicAuth{
-            Username: "",
-            Password: "",
+        config.Auth = &http.BasicAuth{ // 根据实际情况配置，支持git-go所支持的鉴权方式
+            Username: "UserName",
+            Password: "PassWord",
         }
-        //30s自动更新一次配置，小于等于零则不自动更新。更多设置参考 psyche.Config
+        //30s自动更新一次配置，小于等于零则不自动更新，默认为-1。更多设置参考 psyche.Config
         config.RefreshDuration = 30 * time.Second
     })
-    if err == nil {
-        err := psycheClient.Init(config)
-        if err != nil {
-            log.Println(err.Error())
-            panic("start error!")
-        }
+    if err != nil {
+        panic(err.Error())
+    }
+    // 如需要自动更新项目中的配置，调用本方法监听。需要传入配置对象指针的指针，即二级指针，否则会返回错误
+    // 如果不调本方法更新配置对象也可，可以通过GetConfig方法获取最新的配置文件的文本
+    err = psycheClient.Watch(&Config)
+    if err != nil {
+        panic(err.Error())
+    }
+    err = psycheClient.Start()
+    if err != nil {
+        panic(err.Error())
     }
 }
 ```
