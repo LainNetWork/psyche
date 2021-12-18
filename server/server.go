@@ -1,12 +1,15 @@
 package main
 
 import (
-	"fmt"
+	"github.com/gin-gonic/gin"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"log"
 )
 
+var client *Client
+
 func main() {
-	client, err := NewPsycheClient(func(config *Config) {
+	c, err := NewPsycheClient(func(config *Config) {
 		config.Url = "https://git.lain.fun/config"
 		config.ProjectName = "robot-go"
 		config.Suffix = "yml"
@@ -18,20 +21,22 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	file, err := client.GetConfigFile("prod123")
+	client = c
+
+	engine := gin.Default()
+	engine.GET("/config/:env", fetchConfig)
+	err = engine.Run(":8080")
 	if err != nil {
 		panic(err.Error())
 	}
-	fmt.Println(file)
-	//engine := gin.Default()
-	//engine.GET("/config/:env")
-	//err := engine.Run(":8080")
-	//if err != nil {
-	//	panic(err.Error())
-	//}
 }
 
-//func Handler(ctx gin.Context)  {
-//	env := ctx.Param("env")
-//
-//}
+func fetchConfig(ctx *gin.Context) {
+	env := ctx.Param("env")
+	file, err := client.GetConfigFile(env)
+	if err != nil {
+		log.Println(file)
+		Error(ctx, "获取配置文件失败！")
+	}
+	SuccessWithData(ctx, file)
+}

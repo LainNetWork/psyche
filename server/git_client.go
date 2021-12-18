@@ -12,14 +12,15 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sync"
 )
 
 var (
-	RepoInitError           = errors.New("git仓库初始化失败！")
-	SuffixNotSupportError   = errors.New("不支持的文件格式！")
-	ContextNotInitError     = errors.New("环境尚未初始化，请传入配置对象指针！")
-	ContextInitializedError = errors.New("环境已初始化，请勿重复初始化！")
-	NeedDoublePointInput    = errors.New("为了自动更新配置，请传入配置对象的二级指针！")
+	RepoInitError = errors.New("git仓库初始化失败！")
+	//SuffixNotSupportError   = errors.New("不支持的文件格式！")
+	//ContextNotInitError     = errors.New("环境尚未初始化，请传入配置对象指针！")
+	//ContextInitializedError = errors.New("环境已初始化，请勿重复初始化！")
+	//NeedDoublePointInput    = errors.New("为了自动更新配置，请传入配置对象的二级指针！")
 )
 
 type Config struct {
@@ -37,12 +38,14 @@ var psycheClient *Client
 type Client struct {
 	repo         *git.Repository
 	clientConfig *Config
+	configMap    sync.Map // env:configText
+	currentHead  string   // 仓库当前的Head Hash
+	needUpdate   bool
 	//configPointPtr interface{}   // 指向配置对象指针的指针
 	//configPoint    reflect.Value //指向配置对象指针的Value缓存
 	//configType     reflect.Type
 	//watched        bool   // 监听到配置变动的同时，是否刷新配置对象。目前只允许监听一个配置对象
 	//configContent  []byte // 读到最新的配置文件的缓存
-	//currentHead    string // 仓库当前的Head Hash
 }
 
 func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
@@ -163,10 +166,10 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 //}
 
 // refresh 拉取最新配置
-func (psycheClient *Client) refresh() (error, bool) {
+func (psycheClient *Client) refresh() error {
 	worktree, err := psycheClient.repo.Worktree()
 	if err != nil {
-		return err, false
+		return err
 	}
 	err = worktree.Pull(&git.PullOptions{
 		ReferenceName: plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch),
@@ -174,20 +177,19 @@ func (psycheClient *Client) refresh() (error, bool) {
 		Force:         true,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
-		return err, false
+		return err
 	}
-	//head, err := psycheClient.repo.Head()
-	//if err != nil {
-	//	return err, false
-	//}
-	var hasNew = false
-	//if psycheClient.currentHead != head.Hash().String() {
-	//	psycheClient.currentHead = head.Hash().String()
-	//	hasNew = true
-	//} else {
-	//	return nil, false
-	//}
-	return nil, hasNew
+	head, err := psycheClient.repo.Head()
+	if err != nil {
+		return err
+	}
+	if psycheClient.currentHead != head.Hash().String() {
+		psycheClient.currentHead = head.Hash().String()
+		psycheClient.needUpdate = true
+	} else {
+		return nil
+	}
+	return nil
 }
 
 //func (psycheClient *Client) refreshConfig() error {
@@ -211,6 +213,13 @@ func (psycheClient *Client) refresh() (error, bool) {
 //}
 
 func (psycheClient *Client) GetConfigFile(env string) (string, error) {
+	//不需要更新的话，从缓存中读取对应环境的配置数据，如果不存在，则从仓库中加载
+	if psycheClient.needUpdate == false {
+		load, ok := psycheClient.configMap.Load(env)
+		if ok {
+			return load.(string), nil
+		}
+	}
 	worktree, err := psycheClient.repo.Worktree()
 	if err != nil {
 		return "", err
@@ -223,7 +232,9 @@ func (psycheClient *Client) GetConfigFile(env string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(all), err
+	config := string(all)
+	psycheClient.configMap.Store(env, config) // 缓存该环境配置数据
+	return config, err
 }
 
 func (psycheClient *Client) GetConfigPath(env string) string {
