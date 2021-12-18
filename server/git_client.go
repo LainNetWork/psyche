@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 )
 
 var (
@@ -24,13 +25,12 @@ var (
 )
 
 type Config struct {
-	Url         string // git 仓库地址
-	Auth        transport.AuthMethod
-	Branch      string // 分支
-	ProjectName string // 项目名，即在git中文件夹名以及文件名
-	Suffix      string // 配置文件后缀名，目前仅支持yml和yaml
+	Url    string // git 仓库地址
+	Auth   transport.AuthMethod
+	Branch string // 分支
+	Suffix string // 配置文件后缀名，目前仅支持yml和yaml
 	//Env             string        // 环境名
-	//RefreshDuration time.Duration // 自动刷新周期,默认为-1，不开启
+	RefreshDuration time.Duration // 自动刷新周期,默认为-1，不开启
 }
 
 var psycheClient *Client
@@ -41,11 +41,6 @@ type Client struct {
 	configMap    sync.Map // env:configText
 	currentHead  string   // 仓库当前的Head Hash
 	needUpdate   bool
-	//configPointPtr interface{}   // 指向配置对象指针的指针
-	//configPoint    reflect.Value //指向配置对象指针的Value缓存
-	//configType     reflect.Type
-	//watched        bool   // 监听到配置变动的同时，是否刷新配置对象。目前只允许监听一个配置对象
-	//configContent  []byte // 读到最新的配置文件的缓存
 }
 
 func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
@@ -212,7 +207,7 @@ func (psycheClient *Client) refresh() error {
 //	return nil
 //}
 
-func (psycheClient *Client) GetConfigFile(env string) (string, error) {
+func (psycheClient *Client) GetConfigFile(projectName, env string) (string, error) {
 	//不需要更新的话，从缓存中读取对应环境的配置数据，如果不存在，则从仓库中加载
 	if psycheClient.needUpdate == false {
 		load, ok := psycheClient.configMap.Load(env)
@@ -224,7 +219,7 @@ func (psycheClient *Client) GetConfigFile(env string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	open, err := worktree.Filesystem.Open(psycheClient.GetConfigPath(env))
+	open, err := worktree.Filesystem.Open(psycheClient.GetConfigPath(projectName, env))
 	if err != nil {
 		return "", err
 	}
@@ -237,7 +232,7 @@ func (psycheClient *Client) GetConfigFile(env string) (string, error) {
 	return config, err
 }
 
-func (psycheClient *Client) GetConfigPath(env string) string {
+func (psycheClient *Client) GetConfigPath(projectName string, env string) string {
 	config := psycheClient.clientConfig
-	return fmt.Sprintf("%s/%s.%s", config.ProjectName, env, config.Suffix)
+	return fmt.Sprintf("%s/%s.%s", projectName, env, config.Suffix)
 }
