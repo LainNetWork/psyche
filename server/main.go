@@ -47,8 +47,12 @@ func main() {
 	}
 	c, err := NewPsycheClient(func(config *Config) {
 		config.Url = serverConfig.Url
-		config.Branch = serverConfig.Branch
-		config.Suffix = serverConfig.Suffix
+		if serverConfig.Branch != "" {
+			config.Branch = serverConfig.Branch
+		}
+		if serverConfig.Suffix != "" {
+			config.Suffix = serverConfig.Suffix
+		}
 		if serverConfig.Token != "" {
 			config.Auth = &http.TokenAuth{Token: serverConfig.Token}
 		}
@@ -57,6 +61,7 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
+	c.StartAutoUpdate()
 	client = c
 
 	engine := gin.Default()

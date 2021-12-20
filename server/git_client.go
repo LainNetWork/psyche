@@ -40,6 +40,7 @@ type Client struct {
 	clientConfig *Config
 	configMap    sync.Map // env:configText
 	currentHead  string   // 仓库当前的Head Hash
+	branchRef    plumbing.ReferenceName
 	needUpdate   bool
 }
 
@@ -50,10 +51,10 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 		Password: os.Getenv("PSYCHE_GIT_PASSWORD"),
 	}
 	psycheClient.clientConfig = &Config{
-		Url:    os.Getenv("PSYCHE_GIT_URL"),
-		Suffix: "yml",
-		Auth:   auth,
-		//RefreshDuration: time.Duration(-1),
+		Url:             os.Getenv("PSYCHE_GIT_URL"),
+		Suffix:          "yml",
+		Auth:            auth,
+		RefreshDuration: time.Duration(0),
 	}
 	branch := os.Getenv("PSYCHE_GIT_DEFAULT_BRANCH")
 	if branch == "" {
@@ -64,8 +65,9 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	for _, opt := range opts {
 		opt(psycheClient.clientConfig)
 	}
+	psycheClient.branchRef = plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch)
 	clone, err := git.Clone(memory.NewStorage(), memfs.New(), &git.CloneOptions{
-		ReferenceName: plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch),
+		ReferenceName: psycheClient.branchRef,
 		URL:           psycheClient.clientConfig.Url,
 		Auth:          psycheClient.clientConfig.Auth,
 	})
@@ -79,7 +81,7 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 		return nil, RepoInitError
 	}
 	err = worktree.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch),
+		Branch: psycheClient.branchRef,
 		Force:  true,
 	})
 	if err != nil {
@@ -95,9 +97,9 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 //	return string(psycheClient.configContent)
 //}
 //
-//func (psycheClient *Client) needAutoRefresh() bool {
-//	return psycheClient.clientConfig.RefreshDuration > 0
-//}
+func (psycheClient *Client) needAutoRefresh() bool {
+	return psycheClient.clientConfig.RefreshDuration > 0
+}
 
 //func (psycheClient *Client) Watch(configPtrPtr interface{}) error {
 //	if psycheClient.watched {
@@ -125,25 +127,20 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 //	return nil
 //}
 
-// Start 拉取配置，如配置了定时刷新，则启动定时器
-//func (psycheClient *Client) Start() error {
-//	err := renew()
-//	if err != nil {
-//		return err
-//	}
-//	if psycheClient.needAutoRefresh() {
-//		go func() {
-//			ticker := time.NewTicker(psycheClient.clientConfig.RefreshDuration)
-//			for range ticker.C {
-//				err := renew()
-//				if err != nil {
-//					log.Println("刷新配置异常！", err.Error())
-//				}
-//			}
-//		}()
-//	}
-//	return nil
-//}
+//StartAutoUpdate 拉取配置，如配置了定时刷新，则启动定时器
+func (psycheClient *Client) StartAutoUpdate() {
+	if psycheClient.needAutoRefresh() {
+		go func() {
+			ticker := time.NewTicker(psycheClient.clientConfig.RefreshDuration)
+			for range ticker.C {
+				err := psycheClient.refresh()
+				if err != nil {
+					log.Println("刷新配置异常！", err.Error())
+				}
+			}
+		}()
+	}
+}
 
 //func renew() error {
 //	err, hasNew := psycheClient.refresh()
@@ -167,7 +164,7 @@ func (psycheClient *Client) refresh() error {
 		return err
 	}
 	err = worktree.Pull(&git.PullOptions{
-		ReferenceName: plumbing.NewBranchReferenceName(psycheClient.clientConfig.Branch),
+		ReferenceName: psycheClient.branchRef,
 		Auth:          psycheClient.clientConfig.Auth,
 		Force:         true,
 	})
