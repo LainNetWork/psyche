@@ -107,9 +107,11 @@ func (w *Server) fetchConfig(ctx *gin.Context) {
 	} else {
 		_ = conn.WriteJSON(Result{
 			IsOk: true,
-			Msg:  "",
+			Msg:  "success",
 			Data: file,
 		})
 	}
-
+}
+func (w *Server) HandlerApi(conn *websocket.Conn) {
+	defer func() { _ = conn.Close() }()
 }
