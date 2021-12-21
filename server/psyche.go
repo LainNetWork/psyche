@@ -25,27 +25,25 @@ var (
 )
 
 type Config struct {
-	Url    string // git 仓库地址
-	Auth   transport.AuthMethod
-	Branch string // 分支
-	Suffix string // 配置文件后缀名，目前仅支持yml和yaml
-	//Env             string        // 环境名
+	Url             string // git 仓库地址
+	Auth            transport.AuthMethod
+	Branch          string        // 分支
+	Suffix          string        // 配置文件后缀名，目前仅支持yml和yaml
 	RefreshDuration time.Duration // 自动刷新周期,默认为-1，不开启
 }
 
-var psycheClient *Client
-
 type Client struct {
-	repo         *git.Repository
-	clientConfig *Config
-	configMap    sync.Map // env:configText
-	currentHead  string   // 仓库当前的Head Hash
-	branchRef    plumbing.ReferenceName
-	needUpdate   bool
+	repo          *git.Repository
+	clientConfig  *Config
+	configMap     sync.Map // env:configText
+	currentHead   string   // 仓库当前的Head Hash
+	branchRef     plumbing.ReferenceName
+	eventListener map[EventType][]func(...interface{})
 }
 
 func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
-	psycheClient = &Client{}
+	psycheClient := &Client{}
+	psycheClient.eventListener = make(map[EventType][]func(...interface{}))
 	auth := &http.BasicAuth{
 		Username: os.Getenv("PSYCHE_GIT_USERNAME"),
 		Password: os.Getenv("PSYCHE_GIT_PASSWORD"),
@@ -92,11 +90,23 @@ func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
 	return psycheClient, nil
 }
 
-//// GetConfig 直接获取缓存的配置
-//func (psycheClient *Client) GetConfig() string {
-//	return string(psycheClient.configContent)
-//}
-//
+type EventType int
+
+const (
+	NewConfigEvent EventType = iota
+)
+
+func (psycheClient *Client) PublishEvent(eventType EventType, content interface{}) {
+	for _, f := range psycheClient.eventListener[eventType] {
+		f(content)
+	}
+}
+
+func (psycheClient *Client) On(eventType EventType, fun func(...interface{})) {
+	listener := psycheClient.eventListener[eventType]
+	psycheClient.eventListener[eventType] = append(listener, fun)
+}
+
 func (psycheClient *Client) needAutoRefresh() bool {
 	return psycheClient.clientConfig.RefreshDuration > 0
 }
@@ -177,7 +187,21 @@ func (psycheClient *Client) refresh() error {
 	}
 	if psycheClient.currentHead != head.Hash().String() {
 		psycheClient.currentHead = head.Hash().String()
-		psycheClient.needUpdate = true
+		psycheClient.configMap.Range(func(key, value interface{}) bool {
+			projectName := key.(string)
+			envConf := value.(map[string]*string)
+			for env, _ := range envConf {
+				content, err2 := psycheClient.getConfigContent(projectName, env)
+				if err2 != nil {
+					log.Println("获取配置异常！", err.Error())
+					continue
+				}
+				envConf[env] = content
+			}
+			psycheClient.configMap.Store(key, envConf)
+			return false
+		})
+		psycheClient.PublishEvent(NewConfigEvent, nil)
 	} else {
 		return nil
 	}
@@ -204,29 +228,41 @@ func (psycheClient *Client) refresh() error {
 //	return nil
 //}
 
-func (psycheClient *Client) GetConfigFile(projectName, env string) (string, error) {
+func (psycheClient *Client) GetConfig(projectName, env string) (*string, error) {
 	//不需要更新的话，从缓存中读取对应环境的配置数据，如果不存在，则从仓库中加载
-	if psycheClient.needUpdate == false {
-		load, ok := psycheClient.configMap.Load(env)
-		if ok {
-			return load.(string), nil
+	load, ok := psycheClient.configMap.Load(projectName)
+	confMap := make(map[string]*string)
+	if ok {
+		confMap = load.(map[string]*string)
+		envConf := confMap[env]
+		if envConf != nil {
+			return envConf, nil
 		}
 	}
+	content, err := psycheClient.getConfigContent(projectName, env)
+	if err != nil {
+		return nil, err
+	}
+	confMap[env] = content
+	psycheClient.configMap.Store(projectName, confMap) // 缓存该环境配置数据
+	return content, err
+}
+
+func (psycheClient *Client) getConfigContent(projectName string, env string) (*string, error) {
 	worktree, err := psycheClient.repo.Worktree()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	open, err := worktree.Filesystem.Open(psycheClient.GetConfigPath(projectName, env))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	all, err := ioutil.ReadAll(open)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	config := string(all)
-	psycheClient.configMap.Store(env, config) // 缓存该环境配置数据
-	return config, err
+	return &config, nil
 }
 
 func (psycheClient *Client) GetConfigPath(projectName string, env string) string {
