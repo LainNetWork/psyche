@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	jsoniter "github.com/json-iterator/go"
 	"log"
 	http2 "net/http"
 	"sync"
@@ -96,6 +97,7 @@ func (w *Server) fetchConfig(ctx *gin.Context) {
 	w.connMu.Lock()
 	w.conn = append(w.conn, c)
 	w.connMu.Unlock()
+	w.HandlerApi(conn)
 	// 第一次链接，获取文件进行推送
 	file, err := w.psycheClient.GetConfig(projectName, env)
 	if err != nil {
@@ -112,6 +114,48 @@ func (w *Server) fetchConfig(ctx *gin.Context) {
 		})
 	}
 }
+func (w *Server) WriteError(conn *websocket.Conn, message string, data interface{}) {
+	_ = conn.WriteJSON(Result{
+		IsOk: false,
+		Msg:  message,
+		Data: data,
+	})
+}
+
+func (w *Server) WriteSuccess(conn *websocket.Conn, message string, data interface{}) {
+	_ = conn.WriteJSON(Result{
+		IsOk: true,
+		Msg:  message,
+		Data: data,
+	})
+}
 func (w *Server) HandlerApi(conn *websocket.Conn) {
-	defer func() { _ = conn.Close() }()
+	go func() {
+		defer func() { _ = conn.Close() }()
+		for {
+			msgType, p, err := conn.ReadMessage()
+			if err != nil {
+				log.Println("与客户端连接异常！", err.Error())
+				break
+			}
+			if msgType == websocket.TextMessage {
+				result := &Command{}
+				err := jsoniter.Unmarshal(p, result)
+				if err != nil {
+					log.Println("收到不合规的通讯")
+					continue
+				}
+				if result.Type == FetchConfig {
+					config, err := w.psycheClient.GetConfig(result.ProjectName, result.Env)
+					if err != nil {
+						log.Println(err.Error())
+						w.WriteError(conn, "获取配置异常！", nil)
+						continue
+					}
+					w.WriteSuccess(conn, "success", config)
+				}
+			}
+		}
+	}()
+
 }

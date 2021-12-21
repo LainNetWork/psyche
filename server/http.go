@@ -8,6 +8,19 @@ type Result struct {
 	Data interface{} `json:"data"`
 }
 
+type CommandType int
+
+const (
+	FetchConfig CommandType = iota //获取配置
+	HearBeat                       //心跳消息
+)
+
+type Command struct {
+	Type        CommandType `json:"type"`
+	ProjectName string      `json:"project_name"`
+	Env         string      `json:"env"`
+}
+
 func NoAuth(ctx *gin.Context, msg string) {
 	ctx.JSON(401, Result{
 		IsOk: false,
