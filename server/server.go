@@ -97,7 +97,7 @@ func (w *Server) fetchConfig(ctx *gin.Context) {
 	w.connMu.Lock()
 	w.conn = append(w.conn, c)
 	w.connMu.Unlock()
-	w.HandlerApi(conn)
+	w.HandlerApi(conn, projectName, env)
 	// 第一次链接，获取文件进行推送
 	file, err := w.psycheClient.GetConfig(projectName, env)
 	if err != nil {
@@ -129,7 +129,7 @@ func (w *Server) WriteSuccess(conn *websocket.Conn, message string, data interfa
 		Data: data,
 	})
 }
-func (w *Server) HandlerApi(conn *websocket.Conn) {
+func (w *Server) HandlerApi(conn *websocket.Conn, projectName string, env string) {
 	go func() {
 		defer func() { _ = conn.Close() }()
 		for {
@@ -137,6 +137,10 @@ func (w *Server) HandlerApi(conn *websocket.Conn) {
 			if err != nil {
 				log.Println("与客户端连接异常！", err.Error())
 				break
+			}
+			if msgType == websocket.PingMessage {
+				_ = conn.WriteMessage(websocket.PongMessage, nil)
+				continue
 			}
 			if msgType == websocket.TextMessage {
 				result := &Command{}
@@ -146,7 +150,7 @@ func (w *Server) HandlerApi(conn *websocket.Conn) {
 					continue
 				}
 				if result.Type == FetchConfig {
-					config, err := w.psycheClient.GetConfig(result.ProjectName, result.Env)
+					config, err := w.psycheClient.GetConfig(projectName, env)
 					if err != nil {
 						log.Println(err.Error())
 						w.WriteError(conn, "获取配置异常！", nil)

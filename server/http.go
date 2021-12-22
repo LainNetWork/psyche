@@ -16,9 +16,9 @@ const (
 )
 
 type Command struct {
-	Type        CommandType `json:"type"`
-	ProjectName string      `json:"project_name"`
-	Env         string      `json:"env"`
+	Type CommandType `json:"type"`
+	//ProjectName string      `json:"project_name"`
+	//Env         string      `json:"env"`
 }
 
 func NoAuth(ctx *gin.Context, msg string) {
