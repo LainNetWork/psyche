@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		panic("加载配置异常！" + err.Error())
 	}
-	c, err := NewPsycheClient(func(config *Config) {
+	c, err := NewPsycheClient(func(config *ClientConfig) {
 		config.Url = serverConfig.Url
 		if serverConfig.Branch != "" {
 			config.Branch = serverConfig.Branch
