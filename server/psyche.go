@@ -111,32 +111,6 @@ func (psycheClient *Client) needAutoRefresh() bool {
 	return psycheClient.clientConfig.RefreshDuration > 0
 }
 
-//func (psycheClient *Client) Watch(configPtrPtr interface{}) error {
-//	if psycheClient.watched {
-//		return ContextInitializedError
-//	}
-//	//判断是否是二级指针，获取对象struct类型
-//	of := reflect.TypeOf(configPtrPtr)
-//	var p = of
-//	var count = 0
-//	for p.Kind() == reflect.Ptr {
-//		count++
-//		p = p.Elem()
-//		if p.Kind() == reflect.Struct {
-//			break
-//		}
-//	}
-//	if count != 2 {
-//		return NeedDoublePointInput
-//	}
-//	psycheClient.configPointPtr = configPtrPtr
-//	value := reflect.ValueOf(configPtrPtr)
-//	psycheClient.configPoint = value.Elem() // 配置对象的指针
-//	psycheClient.configType = p
-//	psycheClient.watched = true
-//	return nil
-//}
-
 //StartAutoUpdate 拉取配置，如配置了定时刷新，则启动定时器
 func (psycheClient *Client) StartAutoUpdate() {
 	if psycheClient.needAutoRefresh() {
@@ -207,26 +181,6 @@ func (psycheClient *Client) refresh() error {
 	}
 	return nil
 }
-
-//func (psycheClient *Client) refreshConfig() error {
-//	if !psycheClient.watched {
-//		return ContextNotInitError
-//	}
-//	switch psycheClient.clientConfig.Suffix {
-//	case "yaml", "yml":
-//		{
-//			value := reflect.New(psycheClient.configType).Interface()
-//			err := yaml.Unmarshal(psycheClient.configContent, value)
-//			if err != nil {
-//				return err
-//			}
-//			psycheClient.configPoint.Set(reflect.ValueOf(value).Convert(reflect.PtrTo(psycheClient.configType)))
-//		}
-//	default:
-//		return SuffixNotSupportError
-//	}
-//	return nil
-//}
 
 func (psycheClient *Client) GetConfig(projectName, env string) (*string, error) {
 	//不需要更新的话，从缓存中读取对应环境的配置数据，如果不存在，则从仓库中加载

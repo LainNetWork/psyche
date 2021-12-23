@@ -16,7 +16,8 @@ const (
 )
 
 type Command struct {
-	Type CommandType `json:"type"`
+	Type   CommandType `json:"type"`
+	Suffix string      `json:"suffix"`
 	//ProjectName string      `json:"project_name"`
 	//Env         string      `json:"env"`
 }
