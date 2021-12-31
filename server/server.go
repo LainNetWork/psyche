@@ -28,7 +28,7 @@ func (w *Server) Start() {
 	engine := gin.Default()
 	engine.GET("/config/:projectName/:env/:suffix", w.fetchConfig)
 	engine.GET("/config/update", w.updateConfig)
-	err := engine.Run(":8080")
+	err := engine.Run(":7899")
 	if err != nil {
 		panic(err.Error())
 	}
