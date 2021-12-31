@@ -19,3 +19,33 @@ jobs:
   cpuRequirement: 250m
   memoryRequirement: 128m
   timeout: 3600
+- name: build server
+  steps:
+  - !CheckoutStep
+    name: check out
+    cloneCredential: !DefaultCredential {}
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  - !CommandStep
+    name: exec build
+    image: docker:19.03.5
+    commands:
+    - echo "start build @project_name@ image"
+    - if [ $(docker ps -a | grep -c "@project_name@") -gt 0 ]
+    - 'then '
+    - "\tdocker stop @project_name@;"
+    - '    docker rm @project_name@;'
+    - '    docker rmi lain/@project_name@;'
+    - fi;
+    - cd server
+    - docker build -t lain/@project_name@ .
+    - docker run -d --net lainnet --name @project_name@ --restart=always lain/@project_name@
+      -token @secret:gitRepoToken@ -url @secret:gitRepoUrl@ -branch @secret:gitRepoBranch@
+      -refreshDuration @secret:gitRepoRefreshDuration@
+    - echo "end build @project_name@ image"
+    condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  cpuRequirement: 250m
+  memoryRequirement: 128m
+  timeout: 3600
