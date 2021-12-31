@@ -74,7 +74,6 @@ func (psyche *PsycheClient) Connect() error {
 	if err != nil {
 		return DataFormatError
 	}
-	fmt.Println(result.Data)
 	err = psyche.renewWatch(result.Data)
 	if err != nil {
 		return err
@@ -98,7 +97,6 @@ func (psyche *PsycheClient) Connect() error {
 				log.Println("更新消息异常", err2.Error())
 				continue
 			}
-			fmt.Println("-----------------\n", r)
 		}
 	}()
 	return nil
