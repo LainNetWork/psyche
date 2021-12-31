@@ -33,11 +33,8 @@ func main() {
 	viper.SetConfigName("conf")
 	viper.SetConfigType("yml")
 	viper.AddConfigPath(".")
-	err := viper.ReadInConfig()
-	if err != nil {
-		panic("读取配置异常！" + err.Error())
-	}
-	err = viper.Unmarshal(serverConfig)
+	_ = viper.ReadInConfig()
+	err := viper.Unmarshal(serverConfig)
 	if err != nil {
 		panic("加载配置异常！" + err.Error())
 	}
