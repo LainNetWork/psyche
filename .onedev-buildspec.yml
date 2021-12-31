@@ -36,6 +36,7 @@ jobs:
     - '    docker rm @project_name@;'
     - '    docker rmi lain/@project_name@;'
     - fi;
+    - cd server
     - docker build -t lain/@project_name@ .
     - docker run -d --net lainnet --name @project_name@ --restart=always lain/@project_name@
       -token @secret:gitRepoToken@ -url @secret:gitRepoUrl@ -branch @secret:gitRepoBranch@
