@@ -18,6 +18,7 @@ type Server struct {
 type Conn struct {
 	projectName string
 	env         string
+	suffix      string
 	conn        *websocket.Conn
 }
 
@@ -25,7 +26,7 @@ func (w *Server) Start() {
 	w.conn = make([]*Conn, 0)
 	w.psycheClient.On(NewConfigEvent, w.publishConfig)
 	engine := gin.Default()
-	engine.GET("/config/:projectName/:env", w.fetchConfig)
+	engine.GET("/config/:projectName/:env/:suffix", w.fetchConfig)
 	engine.GET("/config/update", w.updateConfig)
 	err := engine.Run(":8080")
 	if err != nil {
@@ -37,8 +38,9 @@ func (w *Server) publishConfig(...interface{}) {
 	w.connMu.Lock()
 	for i := 0; i < len(w.conn); {
 		conn := w.conn[i]
-		config, err := w.psycheClient.GetConfig(conn.projectName, conn.env)
+		config, err := w.psycheClient.GetConfig(conn.projectName, conn.env, conn.suffix)
 		if err != nil {
+			log.Println(err.Error())
 			continue
 		}
 		err = conn.conn.WriteJSON(Result{
@@ -84,35 +86,39 @@ func (w *Server) fetchConfig(ctx *gin.Context) {
 		Error(ctx, "项目名缺失")
 		return
 	}
-	conn, err := upgrade.Upgrade(ctx.Writer, ctx.Request, nil)
-	if err != nil {
-		log.Println("连接失败", err.Error())
+	suffix := ctx.Param("suffix")
+	if suffix == "" {
+		Error(ctx, "后缀缺失")
 		return
 	}
-	c := &Conn{
-		projectName: projectName,
-		env:         env,
-		conn:        conn,
-	}
-	w.connMu.Lock()
-	w.conn = append(w.conn, c)
-	w.connMu.Unlock()
-	w.HandlerApi(conn, projectName, env)
-	// 第一次链接，获取文件进行推送
-	file, err := w.psycheClient.GetConfig(projectName, env)
-	if err != nil {
-		_ = conn.WriteJSON(Result{
-			IsOk: false,
-			Msg:  "获取配置文件失败！",
-		})
-		_ = conn.Close()
+	socketUpgrade := websocket.IsWebSocketUpgrade(ctx.Request)
+	if socketUpgrade {
+		conn, err := upgrade.Upgrade(ctx.Writer, ctx.Request, nil)
+		if err != nil {
+			log.Println("连接失败", err.Error())
+			return
+		}
+		c := &Conn{
+			projectName: projectName,
+			env:         env,
+			suffix:      suffix,
+			conn:        conn,
+		}
+		w.connMu.Lock()
+		w.conn = append(w.conn, c)
+		w.connMu.Unlock()
+		w.HandlerApi(conn, projectName, env, suffix)
 	} else {
-		_ = conn.WriteJSON(Result{
-			IsOk: true,
-			Msg:  "success",
-			Data: file,
-		})
+		// http请求时，直接返回配置
+		file, err := w.psycheClient.GetConfig(projectName, env, suffix)
+		if err != nil {
+			log.Println(err.Error())
+			Error(ctx, "获取配置文件失败！")
+		} else {
+			SuccessWithData(ctx, file)
+		}
 	}
+
 }
 func (w *Server) WriteError(conn *websocket.Conn, message string, data interface{}) {
 	_ = conn.WriteJSON(Result{
@@ -129,7 +135,7 @@ func (w *Server) WriteSuccess(conn *websocket.Conn, message string, data interfa
 		Data: data,
 	})
 }
-func (w *Server) HandlerApi(conn *websocket.Conn, projectName string, env string) {
+func (w *Server) HandlerApi(conn *websocket.Conn, projectName string, env string, suffix string) {
 	go func() {
 		defer func() { _ = conn.Close() }()
 		for {
@@ -150,7 +156,7 @@ func (w *Server) HandlerApi(conn *websocket.Conn, projectName string, env string
 					continue
 				}
 				if result.Type == FetchConfig {
-					config, err := w.psycheClient.GetConfig(projectName, env)
+					config, err := w.psycheClient.GetConfig(projectName, env, suffix)
 					if err != nil {
 						log.Println(err.Error())
 						w.WriteError(conn, "获取配置异常！", nil)

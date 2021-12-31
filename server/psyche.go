@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,7 +25,7 @@ var (
 	//NeedDoublePointInput    = errors.New("为了自动更新配置，请传入配置对象的二级指针！")
 )
 
-type Config struct {
+type ClientConfig struct {
 	Url             string // git 仓库地址
 	Auth            transport.AuthMethod
 	Branch          string        // 分支
@@ -34,21 +35,22 @@ type Config struct {
 
 type Client struct {
 	repo          *git.Repository
-	clientConfig  *Config
-	configMap     sync.Map // env:configText
+	clientConfig  *ClientConfig
+	configMap     sync.Map // configPath:configText
 	currentHead   string   // 仓库当前的Head Hash
+	headMu        sync.Mutex
 	branchRef     plumbing.ReferenceName
 	eventListener map[EventType][]func(...interface{})
 }
 
-func NewPsycheClient(opts ...func(config *Config)) (*Client, error) {
+func NewPsycheClient(opts ...func(config *ClientConfig)) (*Client, error) {
 	psycheClient := &Client{}
 	psycheClient.eventListener = make(map[EventType][]func(...interface{}))
 	auth := &http.BasicAuth{
 		Username: os.Getenv("PSYCHE_GIT_USERNAME"),
 		Password: os.Getenv("PSYCHE_GIT_PASSWORD"),
 	}
-	psycheClient.clientConfig = &Config{
+	psycheClient.clientConfig = &ClientConfig{
 		Url:             os.Getenv("PSYCHE_GIT_URL"),
 		Suffix:          "yml",
 		Auth:            auth,
@@ -115,6 +117,9 @@ func (psycheClient *Client) needAutoRefresh() bool {
 func (psycheClient *Client) StartAutoUpdate() {
 	if psycheClient.needAutoRefresh() {
 		go func() {
+			defer func() {
+				fmt.Println(recover())
+			}()
 			ticker := time.NewTicker(psycheClient.clientConfig.RefreshDuration)
 			for range ticker.C {
 				err := psycheClient.refresh()
@@ -160,54 +165,50 @@ func (psycheClient *Client) refresh() error {
 		return err
 	}
 	if psycheClient.currentHead != head.Hash().String() {
+		psycheClient.headMu.Lock()
 		psycheClient.currentHead = head.Hash().String()
 		psycheClient.configMap.Range(func(key, value interface{}) bool {
-			projectName := key.(string)
-			envConf := value.(map[string]*string)
-			for env, _ := range envConf {
-				content, err2 := psycheClient.getConfigContent(projectName, env)
-				if err2 != nil {
-					log.Println("获取配置异常！", err.Error())
-					continue
-				}
-				envConf[env] = content
+			configPath := key.(string)
+			config, err2 := psycheClient.getConfigByPath(configPath)
+			if err2 != nil {
+				log.Println(err2.Error())
 			}
-			psycheClient.configMap.Store(key, envConf)
+			psycheClient.configMap.Store(key, config)
 			return false
 		})
 		psycheClient.PublishEvent(NewConfigEvent, nil)
+		psycheClient.headMu.Unlock()
 	} else {
 		return nil
 	}
 	return nil
 }
 
-func (psycheClient *Client) GetConfig(projectName, env string) (*string, error) {
-	//不需要更新的话，从缓存中读取对应环境的配置数据，如果不存在，则从仓库中加载
-	load, ok := psycheClient.configMap.Load(projectName)
-	confMap := make(map[string]*string)
+func (psycheClient *Client) GetConfig(projectName, env string, suffix string) (*string, error) {
+	//缓存中存在的话，从缓存中读取对应环境的配置数据，如果不存在，则从仓库中加载
+	load, ok := psycheClient.configMap.Load(psycheClient.GetConfigPath(projectName, env, suffix))
 	if ok {
-		confMap = load.(map[string]*string)
-		envConf := confMap[env]
-		if envConf != nil {
-			return envConf, nil
-		}
+		config := load.(*string)
+		return config, nil
 	}
-	content, err := psycheClient.getConfigContent(projectName, env)
+	content, err := psycheClient.getConfigContent(projectName, env, suffix)
 	if err != nil {
 		return nil, err
 	}
-	confMap[env] = content
-	psycheClient.configMap.Store(projectName, confMap) // 缓存该环境配置数据
+	psycheClient.configMap.Store(psycheClient.GetConfigPath(projectName, env, suffix), content) // 缓存该环境配置数据
 	return content, err
 }
 
-func (psycheClient *Client) getConfigContent(projectName string, env string) (*string, error) {
+func (psycheClient *Client) getConfigByPath(path string) (*string, error) {
+	return psycheClient.getConfigContent(psycheClient.divideConfigPath(path))
+}
+
+func (psycheClient *Client) getConfigContent(projectName string, env string, suffix string) (*string, error) {
 	worktree, err := psycheClient.repo.Worktree()
 	if err != nil {
 		return nil, err
 	}
-	open, err := worktree.Filesystem.Open(psycheClient.GetConfigPath(projectName, env))
+	open, err := worktree.Filesystem.Open(psycheClient.GetConfigPath(projectName, env, suffix))
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +220,15 @@ func (psycheClient *Client) getConfigContent(projectName string, env string) (*s
 	return &config, nil
 }
 
-func (psycheClient *Client) GetConfigPath(projectName string, env string) string {
-	config := psycheClient.clientConfig
-	return fmt.Sprintf("%s/%s.%s", projectName, env, config.Suffix)
+func (psycheClient *Client) GetConfigPath(projectName string, env string, suffix string) string {
+	return fmt.Sprintf("%s/%s.%s", projectName, env, suffix)
+}
+
+func (psycheClient *Client) divideConfigPath(path string) (string, string, string) {
+	f1 := strings.Index(path, "/")
+	f2 := strings.LastIndex(path, ".")
+	projectName := path[:f1]
+	env := path[f1+1 : f2]
+	suffix := path[f2+1:]
+	return projectName, env, suffix
 }
