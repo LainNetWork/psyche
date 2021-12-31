@@ -39,8 +39,8 @@ jobs:
     - cd server
     - docker build -t lain/@project_name@ .
     - docker run -d --net lainnet --name @project_name@ --restart=always lain/@project_name@
-      -token @secret:gitRepoToken@ -url @secret:gitRepoUrl@ -branch @secret:gitRepoBranch@
-      -refreshDuration @secret:gitRepoRefreshDuration@
+      --token @secret:gitRepoToken@ --url @secret:gitRepoUrl@ --branch @secret:gitRepoBranch@
+      --refreshDuration @secret:gitRepoRefreshDuration@
     - echo "end build @project_name@ image"
     condition: ALL_PREVIOUS_STEPS_WERE_SUCCESSFUL
   retryCondition: never
