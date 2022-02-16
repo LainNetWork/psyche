@@ -19,7 +19,6 @@ var (
 	NeedDoublePointInput  = errors.New("为了自动更新配置，请传入配置对象的二级指针！")
 	SuffixNotSupportError = errors.New("不支持的文件格式！")
 	ConnectionFailError   = errors.New("连接配置中心失败！")
-	WatchedError          = errors.New("已注册用于自动更新的指针，请勿重复调用")
 	DataFormatError       = errors.New("数据格式异常！")
 )
 
@@ -43,12 +42,14 @@ type PsycheClient struct {
 	Suffix             string
 	AutoUpdateDuration time.Duration
 	conn               *websocket.Conn
-	watched            bool
 	configContent      string
-	configPointPtr     interface{}
-	configPoint        reflect.Value
-	configType         reflect.Type
+	configPtrInfo      []configPtrInfo
 	configMu           sync.Mutex
+}
+type configPtrInfo struct {
+	configPointPtr interface{}
+	configPoint    reflect.Value
+	configType     reflect.Type
 }
 
 func (psyche *PsycheClient) Connect() error {
@@ -105,20 +106,20 @@ func (psyche *PsycheClient) Connect() error {
 func (psyche *PsycheClient) renewWatch(config string) error {
 	psyche.configMu.Lock()
 	psyche.configContent = config
-	if psyche.watched {
-		switch psyche.Suffix {
-		case "yaml", "yml":
-			{
-				value := reflect.New(psyche.configType).Interface()
+	switch psyche.Suffix {
+	case "yaml", "yml":
+		{
+			for _, info := range psyche.configPtrInfo {
+				value := reflect.New(info.configType).Interface()
 				err := yaml.Unmarshal([]byte(psyche.configContent), value)
 				if err != nil {
 					return err
 				}
-				psyche.configPoint.Set(reflect.ValueOf(value).Convert(reflect.PtrTo(psyche.configType)))
+				info.configPoint.Set(reflect.ValueOf(value).Convert(reflect.PtrTo(info.configType)))
 			}
-		default:
-			return SuffixNotSupportError
 		}
+	default:
+		return SuffixNotSupportError
 	}
 	psyche.configMu.Unlock()
 	return nil
@@ -126,9 +127,6 @@ func (psyche *PsycheClient) renewWatch(config string) error {
 
 // Watch 监听对象指针
 func (psyche *PsycheClient) Watch(configPtrPtr interface{}) error {
-	if psyche.watched {
-		return WatchedError
-	}
 	//判断传入的是否是二级指针，获取对象struct类型
 	of := reflect.TypeOf(configPtrPtr)
 	var p = of
@@ -143,10 +141,12 @@ func (psyche *PsycheClient) Watch(configPtrPtr interface{}) error {
 	if count != 2 {
 		return NeedDoublePointInput
 	}
-	psyche.configPointPtr = configPtrPtr
 	value := reflect.ValueOf(configPtrPtr)
-	psyche.configPoint = value.Elem() // 配置对象的指针
-	psyche.configType = p
-	psyche.watched = true
+	info := configPtrInfo{
+		configPointPtr: configPtrPtr,
+		configPoint:    value.Elem(),
+		configType:     p,
+	}
+	psyche.configPtrInfo = append(psyche.configPtrInfo, info)
 	return nil
 }
