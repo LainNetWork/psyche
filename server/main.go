@@ -24,7 +24,6 @@ type ServerConfig struct {
 	Url             string        `yaml:"url"`
 	Token           string        `yaml:"token"`
 	Branch          string        `yaml:"branch"`
-	Suffix          string        `yaml:"suffix"`
 	RefreshDuration time.Duration `yaml:"refreshDuration"`
 }
 
@@ -42,9 +41,6 @@ func main() {
 		config.Url = serverConfig.Url
 		if serverConfig.Branch != "" {
 			config.Branch = serverConfig.Branch
-		}
-		if serverConfig.Suffix != "" {
-			config.Suffix = serverConfig.Suffix
 		}
 		if serverConfig.Token != "" {
 			config.Auth = &http.TokenAuth{Token: serverConfig.Token}

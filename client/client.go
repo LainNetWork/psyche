@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"reflect"
 	"sync"
-	"time"
 )
 
 var (
@@ -36,15 +35,14 @@ type Command struct {
 }
 
 type PsycheClient struct {
-	ServerAddr         string
-	ProjectName        string
-	Env                string
-	Suffix             string
-	AutoUpdateDuration time.Duration
-	conn               *websocket.Conn
-	configContent      string
-	configPtrInfo      []configPtrInfo
-	configMu           sync.Mutex
+	ServerAddr    string
+	ProjectName   string
+	Env           string
+	Suffix        string
+	conn          *websocket.Conn
+	configContent string
+	configPtrInfo []configPtrInfo
+	configMu      sync.Mutex
 }
 type configPtrInfo struct {
 	configPointPtr interface{}

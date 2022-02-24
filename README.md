@@ -6,52 +6,67 @@
 2. 自动更新配置
 
 ### 使用方法：
-
+#### 一、部署config-server
 1. 创建你的远程git仓库
 2. 在仓库创建你的项目配置文件夹，创建配置文件并按环境命名，如：/projectName/dev.yml
-3. 在需要使用配置的项目中引入本包，可参考如下代码
- 
-```go
-import (
-    "github.com/LainNetWork/psyche"
-    "log"
-)
+3. 配置部署server端，程序根目录配置conf.yml文件
 
-type TestConfig struct {
-    UserName string `yaml:"username"`
-    Password string `yaml:"password"`
-    Notice struct{
-        Tags []int64 `yaml:"tags"`
-    } `yaml:"notice"`
-}
-//必须是指针，否则无法自动更新到此引用上
-var Config = &TestConfig{}
-func init() {
-    psycheClient, err := psyche.NewPsycheClient(func(config *psyche.Config) {
-        // 使用本配置，你需要在git仓库中，按如下路径存放配置文件：
-    	// projectName/dev.yml
-        config.Url = "https://gitxxxxxxx" //你的git仓库地址
-        config.ProjectName = "projectName" //projectName会被识别为仓库中的文件夹名
-        config.Env = "dev"  //环境会被识别为配置文件名
-        config.Auth = &http.BasicAuth{ // 根据实际情况配置，支持git-go所支持的鉴权方式
-            Username: "UserName",
-            Password: "PassWord",
-        }
-        //30s自动更新一次配置，小于等于零则不自动更新，默认为-1。更多设置参考 psyche.Config
-        config.RefreshDuration = 30 * time.Second
-    })
-    if err != nil {
-        panic(err.Error())
-    }
-    // 如需要自动更新项目中的配置，调用本方法监听。需要传入配置对象指针的指针，即二级指针，否则会返回错误
-    // 如果不调本方法更新配置对象也可，可以通过GetConfig方法获取最新的配置文件的文本
-    err = psycheClient.Watch(&Config)
-    if err != nil {
-        panic(err.Error())
-    }
-    err = psycheClient.Start()
-    if err != nil {
-        panic(err.Error())
-    }
-}
+eg:
+```yaml
+url: https://git.com/repo #配置文件仓库地址
+token: 12345689           #token，接口权限校验
+refreshDuration: 5        # 刷新频率，单位（秒）
 ```
+#### 二、项目中引用client端
+
+```go
+import "github.com/LainNetWork/psyche/client"
+```
+```go
+package main
+import "github.com/LainNetWork/psyche/client"
+
+type Config1 struct {
+	Profile  string `yaml:"profile"`
+	Username string `yaml:"username"`
+}
+
+type Config2 struct {
+	Password string `yaml:"password"`
+	TestName string `yaml:"testName"`
+}
+
+
+var Config1 *Config1
+var Config2 *Config2
+
+func init() {
+	psycheClient := client.PsycheClient{
+		ServerAddr:         os.Getenv("GIT_CONFIG_URL"),// 配置服务器地址
+		ProjectName:        "repoName", //仓库名
+		Env:                os.Getenv("GO_ENV"),// 环境
+		Suffix:             "yml", //配置文件后缀
+	}
+	//注意，watch对象是配置对象的二级指针
+	err := psycheClient.Watch(&Config1) //监听配置对象1
+	if err != nil {
+		panic(err.Error())
+	}
+	//可监听多个不同的配置对象
+	err = psycheClient.Watch(&Config2) // 监听配置对象2
+	if err != nil {
+		panic(err.Error())
+	}
+	err = psycheClient.Connect() // 会先同步更新一次配置，之后由长连接进行推送
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+```
+
+当git仓库被更改，config-server监听到后会推送到各client端。
+
+### TodoList
+
+- Server端的更新回调接口，作为定时刷新的备选方案，由git仓库触发更新

@@ -29,7 +29,6 @@ type ClientConfig struct {
 	Url             string // git 仓库地址
 	Auth            transport.AuthMethod
 	Branch          string        // 分支
-	Suffix          string        // 配置文件后缀名，目前仅支持yml和yaml
 	RefreshDuration time.Duration // 自动刷新周期,默认为-1，不开启
 }
 
@@ -52,7 +51,6 @@ func NewPsycheClient(opts ...func(config *ClientConfig)) (*Client, error) {
 	}
 	psycheClient.clientConfig = &ClientConfig{
 		Url:             os.Getenv("PSYCHE_GIT_URL"),
-		Suffix:          "yml",
 		Auth:            auth,
 		RefreshDuration: time.Duration(0),
 	}
