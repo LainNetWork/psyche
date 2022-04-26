@@ -145,7 +145,7 @@ func (w *Server) HandlerApi(conn *websocket.Conn, projectName string, env string
 				break
 			}
 			if msgType == websocket.PingMessage {
-				_ = conn.WriteMessage(websocket.PongMessage, nil)
+				_ = conn.WriteMessage(websocket.PongMessage, p)
 				continue
 			}
 			if msgType == websocket.TextMessage {

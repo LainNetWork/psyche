@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"github.com/togettoyou/wsc"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"log"
@@ -52,6 +53,7 @@ type configPtrInfo struct {
 
 func (psyche *PsycheClient) Connect() error {
 	u := url.URL{Scheme: "ws", Host: psyche.ServerAddr, Path: fmt.Sprintf("/config/%s/%s/%s", psyche.ProjectName, psyche.Env, psyche.Suffix)}
+	wsclient := wsc.New(u.String())
 	dial, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		return err
@@ -78,26 +80,22 @@ func (psyche *PsycheClient) Connect() error {
 		return err
 	}
 	//建立长连接，接收推送
-	go func() {
-		defer func() {
-			_ = dial.Close()
-			//当panic时不中断整个程序，关闭连接后退出
-			recover()
-		}()
-		for {
-			r := &Result{}
-			err2 := dial.ReadJSON(r)
-			if err2 != nil {
-				log.Println("解析消息异常", err.Error())
-				continue
-			}
-			err2 = psyche.renewWatch(r.Data)
-			if err2 != nil {
-				log.Println("更新消息异常", err2.Error())
-				continue
-			}
+	wsclient.OnTextMessageReceived(func(message string) {
+		r := &Result{}
+		err2 := json.Unmarshal([]byte(message), r)
+		if err2 != nil {
+			log.Println("解析消息异常", err.Error())
+			return
 		}
-	}()
+		err2 = psyche.renewWatch(r.Data)
+		if err2 != nil {
+			log.Println("更新消息异常", err2.Error())
+		}
+	})
+	wsclient.OnClose(func(code int, text string) {
+		log.Println("断开与配置服务器的连接！", code, text)
+	})
+	go wsclient.Connect()
 	return nil
 }
 
