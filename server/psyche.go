@@ -146,7 +146,6 @@ func (psycheClient *Client) StartAutoUpdate() {
 
 // refresh 拉取最新配置
 func (psycheClient *Client) refresh() error {
-	log.Println("刷新配置")
 	worktree, err := psycheClient.repo.Worktree()
 	if err != nil {
 		return err
@@ -164,6 +163,7 @@ func (psycheClient *Client) refresh() error {
 		return err
 	}
 	if psycheClient.currentHead != head.Hash().String() {
+		fmt.Println("config refreshed")
 		psycheClient.headMu.Lock()
 		psycheClient.currentHead = head.Hash().String()
 		psycheClient.configMap.Range(func(key, value interface{}) bool {

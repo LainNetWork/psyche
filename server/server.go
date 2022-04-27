@@ -15,6 +15,19 @@ type Server struct {
 	Token        string
 	connMu       sync.Mutex
 }
+
+// RemoveConn 移除conn
+func (w *Server) RemoveConn(conn *websocket.Conn) {
+	w.connMu.Lock()
+	for i, c := range w.conn {
+		if c.conn == conn {
+			w.conn = append(w.conn[:i], w.conn[i+1:]...)
+			break
+		}
+	}
+	w.connMu.Unlock()
+}
+
 type Conn struct {
 	projectName string
 	env         string
@@ -141,6 +154,8 @@ func (w *Server) HandlerApi(conn *websocket.Conn, projectName string, env string
 		for {
 			msgType, p, err := conn.ReadMessage()
 			if err != nil {
+				//remove conn
+				w.RemoveConn(conn)
 				log.Println("与客户端连接异常！", err.Error())
 				break
 			}
