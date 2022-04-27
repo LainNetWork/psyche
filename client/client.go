@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"reflect"
 	"sync"
+	"time"
 )
 
 var (
@@ -54,6 +55,14 @@ type configPtrInfo struct {
 func (psyche *PsycheClient) Connect() error {
 	u := url.URL{Scheme: "ws", Host: psyche.ServerAddr, Path: fmt.Sprintf("/config/%s/%s/%s", psyche.ProjectName, psyche.Env, psyche.Suffix)}
 	wsclient := wsc.New(u.String())
+	wsclient.SetConfig(&wsc.Config{
+		WriteWait:         10 * time.Second,
+		MaxMessageSize:    1024 * 1024 * 2,
+		MinRecTime:        2 * time.Second,
+		MaxRecTime:        60 * time.Second,
+		RecFactor:         1.5,
+		MessageBufferSize: 256,
+	})
 	dial, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		return err
